@@ -24,3 +24,10 @@ app.add_middleware(
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+from .routes import services, customers, appointments
+
+app.include_router(services.router)
+app.include_router(customers.router)
+app.include_router(appointments.router)
+
