@@ -21,8 +21,11 @@ class Customer(CustomerIn):
 
 class AppointmentIn(BaseModel):
     service_id: str
-    customer_id: str
     start_time: datetime
+    # inline customer fields
+    name: str
+    phone: str
+    email: Optional[str] = None
 
 class Appointment(AppointmentIn):
     id: str

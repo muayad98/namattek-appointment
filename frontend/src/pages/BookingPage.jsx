@@ -19,7 +19,7 @@ export default function BookingPage() {
     try {
       await createAppointment({
         service_id: serviceId,
-        customer_id: "placeholder", // we'll auto‑create customer later
+       
         start_time: startTime,
         ...values,
       });

@@ -6,49 +6,84 @@ from ..schemas import AppointmentIn
 from ..utils import to_str
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
-col = db.appointments
-services = db.services
 
-# index for fast overlap checks
-col.create_index([("start_time", 1), ("service_id", 1)])
+svc_col = db.services
+cust_col = db.customers
+appt_col = db.appointments
+
+# Ensure a fast overlap check
+appt_col.create_index([("start_time", 1), ("service_id", 1)], background=True)
+
 
 @router.post("")
 def create_appointment(payload: AppointmentIn):
-    svc = services.find_one({"_id": ObjectId(payload.service_id)})
-    if not svc:
-        raise HTTPException(400, "invalid service_id")
+    """Create a new appointment, auto‑creating the customer if needed."""
 
-    # compute end_time
-    end_time = payload.start_time + relativedelta(minutes=svc["duration_minutes"])
+    # 1) validate service
+    service = svc_col.find_one({"_id": ObjectId(payload.service_id)})
+    if not service:
+        raise HTTPException(status_code=400, detail="invalid service_id")
 
-    # check overlap
-    clash = col.find_one({
-        "service_id": payload.service_id,
-        "status": "scheduled",
-        "start_time": {"$lt": end_time},
-        "end_time": {"$gt": payload.start_time},
-    })
+    # 2) compute end_time from service duration
+    end_time = payload.start_time + relativedelta(
+        minutes=service["duration_minutes"]
+    )
+
+    # 3) prevent double‑booking
+    clash = appt_col.find_one(
+        {
+            "service_id": payload.service_id,
+            "status": "scheduled",
+            "start_time": {"$lt": end_time},
+            "end_time": {"$gt": payload.start_time},
+        }
+    )
     if clash:
-        raise HTTPException(409, "slot already booked")
+        raise HTTPException(status_code=409, detail="slot already booked")
 
-    rec = payload.model_dump()
-    rec["end_time"] = end_time
-    rec["status"] = "scheduled"
-    res = col.insert_one(rec)
-    return {"id": str(res.inserted_id)}
+    # 4) look up or create customer by phone
+    customer = cust_col.find_one({"phone": payload.phone})
+    if not customer:
+        customer_id = cust_col.insert_one(
+            {
+                "name": payload.name,
+                "phone": payload.phone,
+                "email": payload.email,
+            }
+        ).inserted_id
+    else:
+        customer_id = customer["_id"]
+
+    # 5) insert appointment record
+    rec = {
+        "service_id": payload.service_id,
+        "customer_id": str(customer_id),
+        "start_time": payload.start_time,
+        "end_time": end_time,
+        "status": "scheduled",
+    }
+    appt_id = appt_col.insert_one(rec).inserted_id
+    return {"id": str(appt_id)}
+
 
 @router.get("")
 def list_appointments():
-    return to_str(list(col.find()))
+    """Return all appointments (admin use)."""
+    return to_str(list(appt_col.find()))
+
 
 @router.put("/{aid}")
 def update_status(aid: str, status: str):
-    ok = col.update_one({"_id": ObjectId(aid)}, {"$set": {"status": status}})
+    """Update the status: scheduled → arrived / cancelled / no‑show."""
+    ok = appt_col.update_one(
+        {"_id": ObjectId(aid)}, {"$set": {"status": status}}
+    )
     if ok.matched_count == 0:
         raise HTTPException(404)
     return {"ok": True}
 
+
 @router.delete("/{aid}")
 def delete_appointment(aid: str):
-    col.delete_one({"_id": ObjectId(aid)})
+    appt_col.delete_one({"_id": ObjectId(aid)})
     return {"ok": True}
