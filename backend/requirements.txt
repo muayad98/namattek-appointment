@@ -4,3 +4,4 @@ pymongo
 python-dotenv
 fastapi-scheduler
 python-dateutil
+PyJWT[crypto]
