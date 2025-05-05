@@ -1,12 +1,10 @@
-import axios from "axios";
 import { fetchUtils } from "react-admin";
 
-const apiUrl = "http://127.0.0.1:8000";      // update to Render URL in prod
+const apiUrl = "http://127.0.0.1:8000";            // change when you deploy
 
-//--------------------------------------------------------------------
-// Helper – convert {_id:"…"}  ==>  {id:"…"}  (recursively)
-const normalize = (data) => {
-  if (Array.isArray(data)) return data.map(normalize);
+// ─── helper: {_id:"…"} ➜ {id:"…"} (recursively) ──────────────────────
+const toId = (data) => {
+  if (Array.isArray(data)) return data.map(toId);
   if (data && typeof data === "object") {
     const { _id, ...rest } = data;
     return _id ? { id: _id, ...rest } : rest;
@@ -14,40 +12,58 @@ const normalize = (data) => {
   return data;
 };
 
-//--------------------------------------------------------------------
-// Custom HTTP client – inject JWT + normalize response
-const httpClient = async (url, options = {}) => {
+// ─── inject JWT + convert response ───────────────────────────────────
+const fetchJSON = (url, options = {}) => {
   const token = localStorage.getItem("token");
-  if (!options.headers) {
+  if (!options.headers)
     options.headers = new Headers({ Accept: "application/json" });
-  }
-  options.headers.set("Authorization", `Bearer ${token}`);
+  if (token) options.headers.set("Authorization", `Bearer ${token}`);
 
-  const { json } = await fetchUtils.fetchJson(url, options);
-  return { data: normalize(json), total: Array.isArray(json) ? json.length : 1 };
+  return fetchUtils.fetchJson(url, options).then(({ json }) => toId(json));
 };
 
-//--------------------------------------------------------------------
-// Minimal dataProvider for FastAPI REST style
+// ─── dataProvider for FastAPI REST ───────────────────────────────────
 export const dataProvider = {
-  getList: (resource) => httpClient(`${apiUrl}/${resource}`),
+  getList: (resource) =>
+    fetchJSON(`${apiUrl}/${resource}`).then((data) => ({
+      data,
+      total: data.length,
+    })),
 
   getOne: (resource, { id }) =>
-    httpClient(`${apiUrl}/${resource}/${id}`),
-
-  update: (resource, { id, data }) =>
-    httpClient(`${apiUrl}/${resource}/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    fetchJSON(`${apiUrl}/${resource}/${id}`).then((data) => ({ data })),
 
   create: (resource, { data }) =>
-    httpClient(`${apiUrl}/${resource}`, {
+    fetchJSON(`${apiUrl}/${resource}`, {
       method: "POST",
       body: JSON.stringify(data),
-    }),
+    }).then((data) => ({ data })),
+
+  update: (resource, { id, data }) =>
+    fetchJSON(`${apiUrl}/${resource}/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }).then((data) => ({ data })),
 
   delete: (resource, { id }) =>
-    httpClient(`${apiUrl}/${resource}/${id}`, { method: "DELETE" }),
-};
+    fetchJSON(`${apiUrl}/${resource}/${id}`, { method: "DELETE" }).then(() => ({
+      data: id,
+    })),
 
+  deleteMany: (resource, { ids }) =>
+    Promise.all(
+      ids.map((id) =>
+        fetchJSON(`${apiUrl}/${resource}/${id}`, { method: "DELETE" })
+      )
+    ).then(() => ({ data: ids })),
+
+  updateMany: (resource, { ids, data }) =>
+    Promise.all(
+      ids.map((id) =>
+        fetchJSON(`${apiUrl}/${resource}/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(data),
+        })
+      )
+    ).then(() => ({ data: ids })),
+};
