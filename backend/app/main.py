@@ -26,9 +26,11 @@ def healthz():
     return {"status": "ok"}
 
 # ✨ IMPORT ROUTERS *AFTER* db & app are ready
-from .routes import services, customers, appointments, auth  # noqa: E402
+from .routes import services, customers, appointments, auth, stats, config  # noqa: E402
 
 app.include_router(services.router)
 app.include_router(customers.router)
 app.include_router(appointments.router)
 app.include_router(auth.router)
+app.include_router(stats.router)
+app.include_router(config.router)

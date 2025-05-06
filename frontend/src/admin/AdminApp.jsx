@@ -1,5 +1,6 @@
 import { Admin, Resource } from "react-admin";
 import { dataProvider } from "./DataProvider";
+import Dashboard from "./Dashboard";
 
 import {
   ServicesList,
@@ -19,7 +20,7 @@ import {
 
 export default function AdminApp() {
   return (
-    <Admin basename="/admin" dataProvider={dataProvider}>
+    <Admin basename="/admin" dataProvider={dataProvider} dashboard={Dashboard}>
       <Resource
         name="services"
         list={ServicesList}
