@@ -1,8 +1,8 @@
 import { fetchUtils } from "react-admin";
 
-const apiUrl = "http://127.0.0.1:8000";            // change when you deploy
+const apiUrl = "http://127.0.0.1:8000";          // swap for Render URL at deploy
 
-// ─── helper: {_id:"…"} ➜ {id:"…"} (recursively) ──────────────────────
+// ─── helper: Mongo {_id:"…"} ➜ react‑admin {id:"…"} ───────────────────
 const toId = (data) => {
   if (Array.isArray(data)) return data.map(toId);
   if (data && typeof data === "object") {
@@ -12,7 +12,7 @@ const toId = (data) => {
   return data;
 };
 
-// ─── inject JWT + convert response ───────────────────────────────────
+// ─── fetch wrapper: add JWT, convert response ───────────────────────
 const fetchJSON = (url, options = {}) => {
   const token = localStorage.getItem("token");
   if (!options.headers)
@@ -22,10 +22,21 @@ const fetchJSON = (url, options = {}) => {
   return fetchUtils.fetchJson(url, options).then(({ json }) => toId(json));
 };
 
-// ─── dataProvider for FastAPI REST ───────────────────────────────────
+// ─── translate react‑admin params → query string ────────────────────
+const buildQueryURL = (resource, params) => {
+  const url = new URL(`${apiUrl}/${resource}`);
+  if (params?.filter) {
+    Object.entries(params.filter).forEach(([k, v]) => {
+      if (v !== undefined && v !== "") url.searchParams.append(k, v);
+    });
+  }
+  return url.toString();
+};
+
+// ─── full dataProvider with all RA methods ──────────────────────────
 export const dataProvider = {
-  getList: (resource) =>
-    fetchJSON(`${apiUrl}/${resource}`).then((data) => ({
+  getList: (resource, params) =>
+    fetchJSON(buildQueryURL(resource, params)).then((data) => ({
       data,
       total: data.length,
     })),
@@ -66,4 +77,18 @@ export const dataProvider = {
         })
       )
     ).then(() => ({ data: ids })),
+
+  getMany: (resource, { ids }) =>
+    Promise.all(ids.map((id) => fetchJSON(`${apiUrl}/${resource}/${id}`))).then(
+      (records) => ({ data: records })
+    ),
+
+  getManyReference: (resource, params) =>
+    // small collections: client‑side filter is fine
+    fetchJSON(`${apiUrl}/${resource}`).then((all) => {
+      const filtered = all.filter(
+        (rec) => rec[params.target] === params.id
+      );
+      return { data: filtered, total: filtered.length };
+    }),
 };
